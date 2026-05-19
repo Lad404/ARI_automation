@@ -45,9 +45,11 @@ jobs:
       - name: Install Modules via Modern Package Manager
         shell: pwsh
         run: |
-          # Pull the required modules cleanly without rigid version-string boundaries
+          # Install ImportExcel cleanly
           Install-PSResource -Name ImportExcel -TrustRepository -Scope CurrentUser -NoClobber
-          Install-PSResource -Name AzureResourceInventory -TrustRepository -Scope CurrentUser -NoClobber
+
+          # Pin to stable 3.1.2 using explicit version parsing to bypass the v3.6.12 ComObject bug
+          Install-PSResource -Name AzureResourceInventory -Version "3.1.2" -TrustRepository -Scope CurrentUser -NoClobber
 
       - name: Run ARI
         shell: pwsh
