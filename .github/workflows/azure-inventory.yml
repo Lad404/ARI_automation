@@ -84,7 +84,7 @@ jobs:
         shell: pwsh
         run: |
           $storageAccount = "${{ secrets.AZURE_STORAGE_ACCOUNT }}"
-          $container = "ari-reports"
+          $container = "reports"
 
           # Authenticate context using the OIDC-logged-in account token context
           $ctx = New-AzStorageContext -StorageAccountName $storageAccount -UseConnectedAccount
