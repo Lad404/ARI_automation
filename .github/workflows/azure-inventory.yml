@@ -47,7 +47,8 @@ jobs:
       - name: Install ARI and dependencies
         shell: pwsh
         run: |
-          Install-Module -Name AzureResourceInventory -Force -Scope CurrentUser
+          # Pin to stable version 3.1.2 to bypass the v3.6.12 ComObject formatting bug
+          Install-Module -Name AzureResourceInventory -RequiredVersion 3.1.2 -Force -Scope CurrentUser
           Install-Module -Name Az.Accounts -Force -Scope CurrentUser
           Install-Module -Name ImportExcel -Force -Scope CurrentUser
           Import-Module AzureResourceInventory
