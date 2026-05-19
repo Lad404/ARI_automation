@@ -42,20 +42,24 @@ jobs:
           sudo apt-get -y update
           sudo apt-get install -y --no-install-recommends libgdiplus libc6-dev
 
-      - name: Install Modules via Modern Package Manager
+      - name: Download and Setup Stable ARI and Dependencies
         shell: pwsh
         run: |
-          # Install ImportExcel cleanly
-          Install-PSResource -Name ImportExcel -TrustRepository -Scope CurrentUser -NoClobber
+          # 1. Install ImportExcel which works fine natively
+          Install-Module -Name ImportExcel -Force -Scope CurrentUser
 
-          # Use the strict 4-digit gallery string to force download the stable build
-          Install-PSResource -Name AzureResourceInventory -Version "3.1.2.0" -TrustRepository -Scope CurrentUser -NoClobber
+          # 2. Pull the exact stable 3.1.2 package binary directly from the PSGallery storage mirror
+          $packageUrl = "https://www.powershellgallery.com/api/v2/package/AzureResourceInventory/3.1.2"
+          Invoke-WebRequest -Uri $packageUrl -OutFile "$HOME/ari_stable.zip"
+          
+          # 3. Unpack the files cleanly into a designated module directory
+          Expand-Archive -Path "$HOME/ari_stable.zip" -DestinationPath "$HOME/AzureResourceInventory" -Force
 
       - name: Run ARI
         shell: pwsh
         run: |
-          # Import the cleanly installed stable gallery module 
-          Import-Module AzureResourceInventory -Force
+          # Import the unzipped module directly via its absolute manifest file path
+          Import-Module "$HOME/AzureResourceInventory/AzureResourceInventory.psd1" -Force
 
           $params = @{}
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
@@ -70,7 +74,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # Execute the verified gallery module engine natively
+          # Execute the core inventory engine
           Invoke-ARI @params
 
           # Prep workspace for extraction
@@ -83,7 +87,7 @@ jobs:
           if (Test-Path "$HOME/AzureResourceInventory/*.xml") {
               Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
-          
+
       - name: Upload to Azure Blob Storage
         shell: pwsh
         run: |
