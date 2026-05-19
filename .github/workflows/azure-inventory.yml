@@ -47,14 +47,19 @@ jobs:
       - name: Install ARI and dependencies
         shell: pwsh
         run: |
-          # Force re-registration of PowerShell Gallery to fix the repository resolution bug
+          # Force TLS 1.2 for secure repository connections
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+          # Bootstrap the package provider and force a fresh repository refresh
+          Force-力を入れてプロバイダーを更新 (Linux compatibility fallback)
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
           Register-PSRepository -Default -ErrorAction SilentlyContinue
           Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
 
-          # Pin to stable version 3.1.2 to bypass the v3.6.12 ComObject formatting bug
-          Install-Module -Name AzureResourceInventory -RequiredVersion 3.1.2 -Force -Scope CurrentUser
-          Install-Module -Name Az.Accounts -Force -Scope CurrentUser
-          Install-Module -Name ImportExcel -Force -Scope CurrentUser
+          # Install modules with explicit repository targeting
+          Install-Module -Name AzureResourceInventory -RequiredVersion 3.1.2 -Repository PSGallery -Force -Scope CurrentUser
+          Install-Module -Name Az.Accounts -Repository PSGallery -Force -Scope CurrentUser
+          Install-Module -Name ImportExcel -Repository PSGallery -Force -Scope CurrentUser
           Import-Module AzureResourceInventory
 
       - name: Run ARI
