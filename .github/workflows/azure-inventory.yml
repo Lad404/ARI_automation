@@ -39,48 +39,47 @@ jobs:
 
       - name: Install Linux Graphics Dependencies for ImportExcel
         run: |
+          # Added sudo to guarantee libgdiplus installs, fixing the Excel Auto-fitting Column warnings
           sudo apt-get -y update
-          sudo apt-get install -y --no-install-recommends libgdiplus libc6-dev
+          sudo sudo apt-get install -y --no-install-recommends libgdiplus libc6-dev
 
-      - name: Download and Setup Stable ARI and Dependencies
+      - name: Download and Setup Stable ARI
         shell: pwsh
         run: |
-          # 1. Install ImportExcel which works fine natively
+          # 1. Install ImportExcel engine
           Install-Module -Name ImportExcel -Force -Scope CurrentUser
 
-          # 2. Pull the exact stable 3.1.2 package binary directly from the PSGallery storage mirror
+          # 2. Pull stable 3.1.2 zip bundle directly from PSGallery storage mirror
           $packageUrl = "https://www.powershellgallery.com/api/v2/package/AzureResourceInventory/3.1.2"
           Invoke-WebRequest -Uri $packageUrl -OutFile "$HOME/ari_stable.zip"
           
-          # 3. Unpack the files cleanly into a designated module directory
-          Expand-Archive -Path "$HOME/ari_stable.zip" -DestinationPath "$HOME/AzureResourceInventory" -Force
+          # 3. Extract straight into the User Modules path so background jobs natively inherit it
+          $TargetModuleDir = "$HOME/.local/share/powershell/Modules/AzureResourceInventory"
+          New-Item -Path $TargetModuleDir -ItemType Directory -Force
+          Expand-Archive -Path "$HOME/ari_stable.zip" -DestinationPath $TargetModuleDir -Force
 
       - name: Run ARI
         shell: pwsh
         run: |
-          $manifestPath = "$HOME/AzureResourceInventory/AzureResourceInventory.psd1"
-          $functionPath = "$HOME/AzureResourceInventory/modules/Public/PublicFunctions/Invoke-ARI.ps1"
+          $TargetModuleDir = "$HOME/.local/share/powershell/Modules/AzureResourceInventory"
+          $manifestPath = "$TargetModuleDir/AzureResourceInventory.psd1"
+          $functionPath = "$TargetModuleDir/modules/Public/PublicFunctions/Invoke-ARI.ps1"
 
-          # 1. Cleanly strip the missing Az.CostManagement module from the manifest file array
+          # 1. Cleanly strip the missing Az.CostManagement module from the manifest array
           $manifestContent = Get-Content $manifestPath -Raw
           $manifestContent = $manifestContent -replace ",\s*'Az\.CostManagement'|\s*'Az\.CostManagement'\s*,", ""
           Set-Content -Path $manifestPath -Value $manifestContent -Force
 
-          # 2. Hard-silence the internal Update-Module function loop inside the script logic
+          # 2. Hard-silence the internal Update-Module loop inside the run container
           $scriptContent = Get-Content $functionPath -Raw
           $scriptContent = $scriptContent -replace 'Update-Module -Name AzureResourceInventory', '# Update-Module bypassed'
           
-          # 3. CRITICAL HARD-BYPASS: Mock the Get-Package call at the end of the report to prevent tracking crashes
+          # 3. Absolute package bypass: Mock the final Get-Package metadata lookup directly inside the active module path
           $scriptContent = $scriptContent -replace 'Get-Package -Name AzureResourceInventory', '[PSCustomObject]@{Version="3.1.2"}'
           Set-Content -Path $functionPath -Value $scriptContent -Force
 
-          # 4. Copy the patched folder to the default user module path so background jobs can find it
-          $TargetModuleDir = "$HOME/.local/share/powershell/Modules/AzureResourceInventory"
-          New-Item -Path $TargetModuleDir -ItemType Directory -Force
-          Copy-Item -Path "$HOME/AzureResourceInventory/*" -Destination $TargetModuleDir -Recurse -Force
-
-          # 5. Import the module from its newly copied native location
-          Import-Module "$TargetModuleDir/AzureResourceInventory.psd1" -Force
+          # 4. Import the fully patched, globally visible module
+          Import-Module $manifestPath -Force
 
           $params = @{}
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
@@ -95,25 +94,25 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # Run the inventory engine natively
+          # Run the inventory script engine
           Invoke-ARI @params
 
           # Prep workspace for extraction
           New-Item -Path "$env:GITHUB_WORKSPACE/ari-reports" -ItemType Directory -Force
 
-          # Consolidate sheets (Looks inside the workspace folder where ARI drops reports)
+          # Consolidate sheets from where ARI outputs them
           if (Test-Path "$HOME/AzureResourceInventory/*.xlsx") {
               Move-Item -Path "$HOME/AzureResourceInventory/*.xlsx" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
           if (Test-Path "$HOME/AzureResourceInventory/*.xml") {
               Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
-          
+
       - name: Upload to Azure Blob Storage
         shell: pwsh
         run: |
           $storageAccount = "${{ secrets.AZURE_STORAGE_ACCOUNT }}"
-          $container = "reports"
+          $container = "ari-reports"
           $ctx = New-AzStorageContext -StorageAccountName $storageAccount -UseConnectedAccount
 
           Get-ChildItem -Path "$env:GITHUB_WORKSPACE/ari-reports" -File | ForEach-Object {
