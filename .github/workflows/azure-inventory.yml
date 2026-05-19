@@ -7,17 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       subscriptionId:
-        description: 'Specific subscription ID (optional)'
+        description: 'Specific Subscription ID (Optional)'
         required: false
         default: ''
 
       resourceGroup:
-        description: 'Specific resource group (optional)'
+        description: 'Specific Resource Group (Optional)'
         required: false
         default: ''
 
       reportName:
-        description: 'Custom report name (optional)'
+        description: 'Custom Report Name (Optional)'
         required: false
         default: ''
 
@@ -31,12 +31,12 @@ jobs:
 
     steps:
 
-      # Checkout Repository
+      # Checkout Repo
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       # Azure Login using OIDC
-      - name: Azure Login via OIDC
+      - name: Azure Login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -44,16 +44,18 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           enable-AzPSSession: true
 
-      # Install Linux dependencies required for ImportExcel
+      # Install Linux Dependencies
       - name: Install Linux Dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             libgdiplus \
-            libc6-dev
+            libc6-dev \
+            unzip
 
-      # Install PowerShell Modules Properly
-      - name: Install Azure Resource Inventory Modules
+      # Install PowerShell Modules
+      - name: Install Required PowerShell Modules
         shell: pwsh
         run: |
 
@@ -66,25 +68,28 @@ jobs:
           Write-Host "Installing Az Module..."
           Install-Module `
             -Name Az `
+            -Repository PSGallery `
             -Force `
             -AllowClobber `
             -Scope CurrentUser
 
-          Write-Host "Installing ImportExcel Module..."
+          Write-Host "Installing ImportExcel..."
           Install-Module `
             -Name ImportExcel `
+            -Repository PSGallery `
             -Force `
             -AllowClobber `
             -Scope CurrentUser
 
-          Write-Host "Installing AzureResourceInventory Module..."
+          Write-Host "Installing AzureResourceInventory..."
           Install-Module `
             -Name AzureResourceInventory `
+            -Repository PSGallery `
             -Force `
             -AllowClobber `
             -Scope CurrentUser
 
-      # Execute Azure Resource Inventory
+      # Run Azure Resource Inventory
       - name: Run Azure Resource Inventory
         shell: pwsh
         run: |
@@ -92,35 +97,36 @@ jobs:
           Write-Host "Importing AzureResourceInventory Module..."
           Import-Module AzureResourceInventory -Force
 
-          Write-Host "Creating Parameters..."
+          Write-Host "Creating report parameters..."
 
           $params = @{
-            ReportName = "AzureInventory_$(Get-Date -Format 'yyyyMMdd')"
+              ReportName = "AzureInventory_$(Get-Date -Format 'yyyyMMdd')"
           }
 
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
-            $params["SubscriptionID"] = "${{ github.event.inputs.subscriptionId }}"
+              $params["SubscriptionID"] = "${{ github.event.inputs.subscriptionId }}"
           }
 
           if ("${{ github.event.inputs.resourceGroup }}" -ne "") {
-            $params["ResourceGroup"] = "${{ github.event.inputs.resourceGroup }}"
+              $params["ResourceGroup"] = "${{ github.event.inputs.resourceGroup }}"
           }
 
           if ("${{ github.event.inputs.reportName }}" -ne "") {
-            $params["ReportName"] = "${{ github.event.inputs.reportName }}"
+              $params["ReportName"] = "${{ github.event.inputs.reportName }}"
           }
 
-          Write-Host "Running Azure Resource Inventory..."
+          Write-Host "Running Invoke-ARI..."
+
           Invoke-ARI @params
 
-          Write-Host "Preparing report folder..."
+          Write-Host "Creating report output folder..."
 
           New-Item `
             -Path "$env:GITHUB_WORKSPACE/ari-reports" `
             -ItemType Directory `
             -Force
 
-          Write-Host "Collecting generated reports..."
+          Write-Host "Searching generated reports..."
 
           Get-ChildItem `
             -Path $HOME `
@@ -140,18 +146,18 @@ jobs:
             -Destination "$env:GITHUB_WORKSPACE/ari-reports/" `
             -Force
 
-          Write-Host "Generated Reports:"
+          Write-Host "Generated files:"
           Get-ChildItem "$env:GITHUB_WORKSPACE/ari-reports"
 
-      # Upload Reports as GitHub Artifact
-      - name: Upload Reports to GitHub Artifact
+      # Upload Report as GitHub Artifact
+      - name: Upload GitHub Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: azure-resource-inventory-report
+          name: azure-resource-inventory
           path: ari-reports/
 
-      # Upload Reports to Azure Blob Storage
-      - name: Upload Reports to Azure Blob Storage
+      # Upload to Azure Blob Storage
+      - name: Upload Reports to Azure Blob
         shell: pwsh
         run: |
 
@@ -164,14 +170,14 @@ jobs:
             -StorageAccountName $storageAccount `
             -UseConnectedAccount
 
-          Write-Host "Uploading Files to Blob Container..."
+          Write-Host "Uploading files to Blob Container..."
 
           Get-ChildItem `
             -Path "$env:GITHUB_WORKSPACE/ari-reports" `
             -File |
             ForEach-Object {
 
-              Write-Host "Uploading $($_.Name)"
+              Write-Host "Uploading file: $($_.Name)"
 
               Set-AzStorageBlobContent `
                 -File $_.FullName `
@@ -181,12 +187,13 @@ jobs:
                 -Force
           }
 
-      # Send Email Notification
+      # Email Notification
       - name: Send Email Notification
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
+          secure: true
 
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
@@ -196,13 +203,13 @@ jobs:
           body: |
             Hello Team,
 
-            The Azure Resource Inventory execution has completed successfully.
+            The Azure Resource Inventory execution completed successfully.
 
-            Reports Generated:
+            Generated Reports:
             - Excel Inventory Report
             - XML Inventory Report
 
-            Storage Location:
+            Storage:
             Azure Blob Container: ari-reports
 
             Regards,
@@ -213,9 +220,6 @@ jobs:
 
           from: Azure Inventory Automation <${{ secrets.EMAIL_USERNAME }}>
 
-          secure: true
-
           attachments: |
             ari-reports/*.xlsx
             ari-reports/*.xml
-
