@@ -50,19 +50,20 @@ jobs:
           # 1. Install ImportExcel
           Install-Module -Name ImportExcel -Force -Scope CurrentUser
 
-          # 2. Force-load the pre-cached Az module to satisfy ARI's manifest prerequisites
-          Import-Module Az -Force
-
-          # 3. Clone the main repository cleanly
+          # 2. Clone the main repository cleanly
           git clone https://github.com/microsoft/ARI.git "$HOME/ARI_Source"
           
-          # 4. Import via the proper .psd1 manifest now that dependencies are available
-          Import-Module "$HOME/ARI_Source/AzureResourceInventory.psd1" -Force
+          # 3. CRITICAL BYPASS: Strip the missing Az.CostManagement dependency out of the manifest file
+          $manifestPath = "$HOME/ARI_Source/AzureResourceInventory.psd1"
+          (Get-Content $manifestPath) -replace "'Az.CostManagement'", "" | Set-Content $manifestPath
+
+          # 4. Import via the modified .psd1 manifest with its structural folder paths intact
+          Import-Module $manifestPath -Force
           
       - name: Run ARI
         shell: pwsh
         run: |
-          # Load the locally checked-out code into this runner step session
+          # Import the modified manifest into this step's session
           Import-Module "$HOME/ARI_Source/AzureResourceInventory.psd1" -Force
 
           $params = @{}
