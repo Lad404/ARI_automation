@@ -51,7 +51,6 @@ jobs:
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
           # Bootstrap the package provider and force a fresh repository refresh
-          Force-力を入れてプロバイダーを更新 (Linux compatibility fallback)
           Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
           Register-PSRepository -Default -ErrorAction SilentlyContinue
           Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
