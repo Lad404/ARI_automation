@@ -47,19 +47,15 @@ jobs:
       - name: Install ARI and dependencies
         shell: pwsh
         run: |
-          # 1. Install ImportExcel which doesn't have the repository routing bug
+          # 1. Install ImportExcel
           Install-Module -Name ImportExcel -Force -Scope CurrentUser
 
           # 2. Clone the main repository cleanly
           git clone https://github.com/microsoft/ARI.git "$HOME/ARI_Source"
           
-          # 3. Pivot inside the directory and force check out the working stable build commit
-          cd "$HOME/ARI_Source"
-          git checkout d4cf67f
-
-          # 4. Import the module directly from the verified root path
-          Import-Module "$HOME/ARI_Source/AzureResourceInventory.psd1" -Force
-
+          # 3. Force-import the module, bypassing the local module manifest constraints
+          Import-Module "$HOME/ARI_Source/AzureResourceInventory.psm1" -Force
+          
       - name: Run ARI
         shell: pwsh
         run: |
