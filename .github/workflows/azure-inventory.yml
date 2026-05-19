@@ -59,13 +59,19 @@ jobs:
         shell: pwsh
         run: |
           $manifestPath = "$HOME/AzureResourceInventory/AzureResourceInventory.psd1"
+          $functionPath = "$HOME/AzureResourceInventory/modules/Public/PublicFunctions/Invoke-ARI.ps1"
 
-          # Cleanly strip the missing Az.CostManagement module from the local manifest file array
+          # 1. Cleanly strip the missing Az.CostManagement module from the manifest file array
           $manifestContent = Get-Content $manifestPath -Raw
           $manifestContent = $manifestContent -replace ",\s*'Az\.CostManagement'|\s*'Az\.CostManagement'\s*,", ""
           Set-Content -Path $manifestPath -Value $manifestContent -Force
 
-          # Import the patched manifest file
+          # 2. Hard-silence the internal Update-Module function loop inside the script logic
+          $scriptContent = Get-Content $functionPath -Raw
+          $scriptContent = $scriptContent -replace 'Update-Module -Name AzureResourceInventory', '# Update-Module bypassed'
+          Set-Content -Path $functionPath -Value $scriptContent -Force
+
+          # 3. Import the patched manifest file
           Import-Module $manifestPath -Force
 
           $params = @{}
@@ -81,10 +87,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # CRITICAL BYPASS: Stops the tool from trying to self-update via a broken module path stream
-          $params.Add("SkipUpdateCheck", $true)
-
-          # Run the inventory engine
+          # Run the inventory engine natively
           Invoke-ARI @params
 
           # Prep workspace for extraction
