@@ -63,22 +63,23 @@ jobs:
         run: |
           $TargetModuleDir = "$HOME/.local/share/powershell/Modules/AzureResourceInventory"
           $manifestPath = "$TargetModuleDir/AzureResourceInventory.psd1"
-          $functionPath = "$TargetModuleDir/modules/Public/PublicFunctions/Invoke-ARI.ps1"
 
           # 1. Cleanly strip the missing Az.CostManagement module from the manifest array
           $manifestContent = Get-Content $manifestPath -Raw
           $manifestContent = $manifestContent -replace ",\s*'Az\.CostManagement'|\s*'Az\.CostManagement'\s*,", ""
           Set-Content -Path $manifestPath -Value $manifestContent -Force
 
-          # 2. Hard-silence the internal Update-Module loop inside the run container
-          $scriptContent = Get-Content $functionPath -Raw
-          $scriptContent = $scriptContent.Replace('Update-Module -Name AzureResourceInventory', '# Update-Module bypassed')
-          
-          # 3. Absolute package bypass: Use exact string replacement to kill the Get-Package error
-          $scriptContent = $scriptContent.Replace('Get-Package -Name AzureResourceInventory', '[PSCustomObject]@{Version="3.1.2"}')
-          Set-Content -Path $functionPath -Value $scriptContent -Force
+          # 2. IN-MEMORY FUNCTION INJECTION: Force a custom Get-Package dummy into the session
+          # This forces ARI to receive a valid object instead of hitting the runner's empty package manager database
+          Function Get-Package {
+              param([string]$Name)
+              if ($Name -eq 'AzureResourceInventory') {
+                  return [PSCustomObject]@{ Name = 'AzureResourceInventory'; Version = '3.1.2' }
+              }
+              return Microsoft.PowerShell.PackageManagement\Get-Package @PSBoundParameters
+          }
 
-          # 4. Import the fully patched, globally visible module
+          # 3. Import the globally visible module layout
           Import-Module $manifestPath -Force
 
           $params = @{}
@@ -94,7 +95,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # Run the inventory script engine
+          # 4. Run the inventory script engine with our function interceptor active
           Invoke-ARI @params
 
           # Prep workspace for extraction
@@ -105,9 +106,9 @@ jobs:
               Move-Item -Path "$HOME/AzureResourceInventory/*.xlsx" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
           if (Test-Path "$HOME/AzureResourceInventory/*.xml") {
-              Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:WORKSPACE/ari-reports/" -Force
+              Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
-
+          
       - name: Upload to Azure Blob Storage
         shell: pwsh
         run: |
