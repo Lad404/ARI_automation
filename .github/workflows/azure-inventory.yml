@@ -122,37 +122,20 @@ jobs:
               $params["ReportName"] = "${{ github.event.inputs.reportName }}"
           }
 
-          Write-Host "Running Invoke-ARI..."
-
-          Invoke-ARI @params
-
           Write-Host "Creating report output folder..."
-
+          
           New-Item `
             -Path "$env:GITHUB_WORKSPACE/ari-reports" `
             -ItemType Directory `
             -Force
-
-          Write-Host "Searching generated reports..."
-
-          Get-ChildItem `
-            -Path $HOME `
-            -Filter "*.xlsx" `
-            -Recurse `
-            -ErrorAction SilentlyContinue |
-            Move-Item `
-            -Destination "$env:GITHUB_WORKSPACE/ari-reports/" `
-            -Force
-
-          Get-ChildItem `
-            -Path $HOME `
-            -Filter "*.xml" `
-            -Recurse `
-            -ErrorAction SilentlyContinue |
-            Move-Item `
-            -Destination "$env:GITHUB_WORKSPACE/ari-reports/" `
-            -Force
-
+          
+          Write-Host "Running Invoke-ARI..."
+          
+          Invoke-ARI `
+            @params `
+            -SkipReportExcel `
+            -ReportDir "$env:GITHUB_WORKSPACE/ari-reports"
+          
           Write-Host "Generated files:"
           Get-ChildItem "$env:GITHUB_WORKSPACE/ari-reports"
 
