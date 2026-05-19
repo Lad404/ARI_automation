@@ -47,25 +47,22 @@ jobs:
       - name: Install ARI and dependencies
         shell: pwsh
         run: |
-          # Force TLS 1.2 for secure repository connections
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          # 1. Install ImportExcel which doesn't have the repository routing bug
+          Install-Module -Name ImportExcel -Force -Scope CurrentUser
 
-          # Bootstrap the package provider and force a fresh repository refresh
-          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
-          Register-PSRepository -Default -ErrorAction SilentlyContinue
-          Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
-
-          # Install modules with explicit repository targeting
-          Install-Module -Name AzureResourceInventory -RequiredVersion 3.1.2 -Repository PSGallery -Force -Scope CurrentUser
-          Install-Module -Name Az.Accounts -Repository PSGallery -Force -Scope CurrentUser
-          Install-Module -Name ImportExcel -Repository PSGallery -Force -Scope CurrentUser
-          Import-Module AzureResourceInventory
+          # 2. Bypass PSGallery completely for ARI by cloning a verified, stable release branch directly from GitHub source
+          git clone --branch v3.1.2 https://github.com/microsoft/ARI.git "$HOME/ARI_Source"
+          
+          # 3. Import the module directly from the downloaded source files
+          Import-Module "$HOME/ARI_Source/AzureResourceInventory.psd1" -Force
 
       - name: Run ARI
         shell: pwsh
         run: |
-          $params = @{}
+          # Re-import the locally cloned module inside this step's session
+          Import-Module "$HOME/ARI_Source/AzureResourceInventory.psd1" -Force
 
+          $params = @{}
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
               $params.Add("SubscriptionID", "${{ github.event.inputs.subscriptionId }}")
           }
@@ -78,7 +75,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # Invoke Azure Resource Inventory automation (Clean execution with system graphics libraries ready)
+          # Execute using the direct source import context
           Invoke-ARI @params
 
           # Prep workspace for extraction
@@ -88,7 +85,7 @@ jobs:
           if (Test-Path "$HOME/AzureResourceInventory/*.xml") {
               Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
-
+          
       - name: Upload to Azure Blob Storage
         shell: pwsh
         run: |
