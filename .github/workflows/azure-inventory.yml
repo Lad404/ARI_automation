@@ -59,13 +59,14 @@ jobs:
         shell: pwsh
         run: |
 
-          Write-Host "Installing NuGet Provider..."
-          Install-PackageProvider -Name NuGet -Force
-
           Write-Host "Trusting PSGallery..."
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+
+          Set-PSRepository `
+            -Name PSGallery `
+            -InstallationPolicy Trusted
 
           Write-Host "Installing Az Module..."
+
           Install-Module `
             -Name Az `
             -Repository PSGallery `
@@ -74,6 +75,7 @@ jobs:
             -Scope CurrentUser
 
           Write-Host "Installing ImportExcel..."
+
           Install-Module `
             -Name ImportExcel `
             -Repository PSGallery `
@@ -82,12 +84,17 @@ jobs:
             -Scope CurrentUser
 
           Write-Host "Installing AzureResourceInventory..."
+
           Install-Module `
             -Name AzureResourceInventory `
             -Repository PSGallery `
             -Force `
             -AllowClobber `
             -Scope CurrentUser
+
+          Write-Host "Installed Modules:"
+          Get-Module -ListAvailable
+
 
       # Run Azure Resource Inventory
       - name: Run Azure Resource Inventory
