@@ -37,35 +37,32 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           enable-AzPSSession: true
 
-      - name: Download and Setup Compiled ARI Module
+      - name: Install Linux Graphics Dependencies for ImportExcel
+        run: |
+          sudo apt-get -y update
+          sudo apt-get install -y --no-install-recommends libgdiplus libc6-dev
+
+      - name: Force Repair PSGallery and Install Modules
         shell: pwsh
         run: |
-          # 1. Direct-download stable compiled module package bypasses PSGallery/Git pathing issues
-          $url = "https://github.com/microsoft/ARI/archive/refs/heads/main.zip"
-          Invoke-WebRequest -Uri $url -OutFile "$HOME/ari.zip"
-          Expand-Archive -Path "$HOME/ari.zip" -DestinationPath "$HOME/ari_extracted" -Force
-          
-          # Move files into a standard module root folder structure
-          New-Item -Path "$HOME/Modules/AzureResourceInventory" -ItemType Directory -Force
-          Copy-Item -Path "$HOME/ari_extracted/ARI-main/*" -Destination "$HOME/Modules/AzureResourceInventory" -Recurse -Force
+          # 1. Force TLS 1.2 routing for secure package stream connections
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-          # 2. Setup standard dependency module
-          Install-Module -Name ImportExcel -Force -Scope CurrentUser
+          # 2. Hard-register the absolute, verified Microsoft NuGet endpoint to fix the "No Match Found" lookup bug
+          $PSGalleryUrl = "https://www.powershellgallery.com/api/v2"
+          Register-PSRepository -Name "PSGallery" -SourceLocation $PSGalleryUrl -InstallationPolicy Trusted -Force -ErrorAction SilentlyContinue
+          Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
+
+          # 3. Clean install stable production modules directly from the newly repaired repository feed
+          Install-Module -Name ImportExcel -Repository PSGallery -Force -Scope CurrentUser
+          Install-Module -Name Az.Accounts -Repository PSGallery -Force -Scope CurrentUser
+          Install-Module -Name AzureResourceInventory -RequiredVersion 3.1.2 -Repository PSGallery -Force -Scope CurrentUser
 
       - name: Run ARI
         shell: pwsh
         run: |
-          # Dynamically locate the manifest file to eliminate Linux case-sensitivity folder bugs
-          $ModulePath = (Get-ChildItem -Path "$HOME/ari_extracted" -Filter "AzureResourceInventory.psd1" -Recurse).FullName
-          Write-Output "Successfully found module manifest at: $ModulePath"
-
-          # Strip the broken Az.CostManagement dependency directly from the file
-          $manifestContent = Get-Content $ModulePath -Raw
-          $manifestContent = $manifestContent -replace ",\s*'Az\.CostManagement'|\s*'Az\.CostManagement'\s*,", ""
-          Set-Content -Path $ModulePath -Value $manifestContent -Force
-
-          # Explicitly import the modified manifest file
-          Import-Module $ModulePath -Force
+          # Import the cleanly installed gallery module
+          Import-Module AzureResourceInventory -Force
 
           $params = @{}
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
@@ -80,7 +77,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # Run the inventory engine
+          # Execute the verified gallery module engine natively
           Invoke-ARI @params
 
           # Prep workspace for extraction
@@ -93,7 +90,7 @@ jobs:
           if (Test-Path "$HOME/AzureResourceInventory/*.xml") {
               Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
-          
+
       - name: Upload to Azure Blob Storage
         shell: pwsh
         run: |
@@ -125,6 +122,7 @@ jobs:
             Cloud Infrastructure Automation Bot
           to: MoizJawadwala@synergetics-consulting.com, SunnyRana@synergetics-consulting.com
           cc: AkshayWayal@synergetics-consulting.com, YogeshKhairnar@synergetics-consulting.com
+ 
           from: Azure Inventory Automation <${{ secrets.EMAIL_USERNAME }}>
           attachments: |
             ari-reports/*
