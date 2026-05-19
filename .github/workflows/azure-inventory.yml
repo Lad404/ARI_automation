@@ -39,9 +39,9 @@ jobs:
 
       - name: Install Linux Graphics Dependencies for ImportExcel
         run: |
-          # Added sudo to guarantee libgdiplus installs, fixing the Excel Auto-fitting Column warnings
+          # Fixed the double-sudo typo so libgdiplus installs correctly
           sudo apt-get -y update
-          sudo sudo apt-get install -y --no-install-recommends libgdiplus libc6-dev
+          sudo apt-get install -y --no-install-recommends libgdiplus libc6-dev
 
       - name: Download and Setup Stable ARI
         shell: pwsh
@@ -72,10 +72,10 @@ jobs:
 
           # 2. Hard-silence the internal Update-Module loop inside the run container
           $scriptContent = Get-Content $functionPath -Raw
-          $scriptContent = $scriptContent -replace 'Update-Module -Name AzureResourceInventory', '# Update-Module bypassed'
+          $scriptContent = $scriptContent.Replace('Update-Module -Name AzureResourceInventory', '# Update-Module bypassed')
           
-          # 3. Absolute package bypass: Mock the final Get-Package metadata lookup directly inside the active module path
-          $scriptContent = $scriptContent -replace 'Get-Package -Name AzureResourceInventory', '[PSCustomObject]@{Version="3.1.2"}'
+          # 3. Absolute package bypass: Use exact string replacement to kill the Get-Package error
+          $scriptContent = $scriptContent.Replace('Get-Package -Name AzureResourceInventory', '[PSCustomObject]@{Version="3.1.2"}')
           Set-Content -Path $functionPath -Value $scriptContent -Force
 
           # 4. Import the fully patched, globally visible module
@@ -105,7 +105,7 @@ jobs:
               Move-Item -Path "$HOME/AzureResourceInventory/*.xlsx" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
           if (Test-Path "$HOME/AzureResourceInventory/*.xml") {
-              Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
+              Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:WORKSPACE/ari-reports/" -Force
           }
 
       - name: Upload to Azure Blob Storage
@@ -137,9 +137,8 @@ jobs:
             
             Best Regards,
             Cloud Infrastructure Automation Bot
-          to: MoizJawadwala@synergetics-consulting.com, SunnyRana@synergetics-consulting.com
-          cc: AkshayWayal@synergetics-consulting.com, YogeshKhairnar@synergetics-consulting.com
- 
+          to: primary-recipient@example.com, second-recipient@example.com
+          cc: manager@example.com, supervisor@example.com
           from: Azure Inventory Automation <${{ secrets.EMAIL_USERNAME }}>
           attachments: |
             ari-reports/*
