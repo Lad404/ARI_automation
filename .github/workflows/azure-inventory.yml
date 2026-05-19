@@ -58,8 +58,15 @@ jobs:
       - name: Run ARI
         shell: pwsh
         run: |
-          # Import the unzipped module directly via its absolute manifest file path
-          Import-Module "$HOME/AzureResourceInventory/AzureResourceInventory.psd1" -Force
+          $manifestPath = "$HOME/AzureResourceInventory/AzureResourceInventory.psd1"
+
+          # Cleanly strip the missing Az.CostManagement module from the local manifest file array
+          $manifestContent = Get-Content $manifestPath -Raw
+          $manifestContent = $manifestContent -replace ",\s*'Az\.CostManagement'|\s*'Az\.CostManagement'\s*,", ""
+          Set-Content -Path $manifestPath -Value $manifestContent -Force
+
+          # Import the patched manifest file
+          Import-Module $manifestPath -Force
 
           $params = @{}
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
@@ -74,7 +81,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # Execute the core inventory engine
+          # Run the inventory engine
           Invoke-ARI @params
 
           # Prep workspace for extraction
