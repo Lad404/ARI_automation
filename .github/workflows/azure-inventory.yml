@@ -1,0 +1,83 @@
+name: Azure Resource Inventory (OIDC)
+
+on:
+  schedule:
+    # Runs automatically every Monday at 8:00 AM UTC
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+    inputs:
+      subscriptionId:
+        description: 'Specific subscription ID (optional)'
+        required: false
+        default: ''
+      resourceGroup:
+        description: 'Specific resource group (optional)'
+        required: false
+        default: ''
+      reportName:
+        description: 'Custom report name (optional)'
+        required: false
+        default: ''
+
+# Required permissions for requesting the OIDC JWT token from GitHub
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  run-inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Login to Azure via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Install ARI and dependencies
+        shell: pwsh
+        run: |
+          Install-Module -Name AzureResourceInventory -Force -Scope CurrentUser
+          Install-Module -Name Az.Accounts -Force -Scope CurrentUser
+          Install-Module -Name ImportExcel -Force -Scope CurrentUser
+          Import-Module AzureResourceInventory
+
+      - name: Run ARI
+        shell: pwsh
+        run: |
+          $params = @{}
+
+          if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
+              $params.Add("SubscriptionID", "${{ github.event.inputs.subscriptionId }}")
+          }
+          if ("${{ github.event.inputs.resourceGroup }}" -ne "") {
+              $params.Add("ResourceGroup", "${{ github.event.inputs.resourceGroup }}")
+          }
+          if ("${{ github.event.inputs.reportName }}" -ne "") {
+              $params.Add("ReportName", "${{ github.event.inputs.reportName }}")
+          } else {
+              $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
+          }
+
+          # Invoke Azure Resource Inventory automation
+          Invoke-ARI @params
+
+          # Prep workspace for extraction
+          New-Item -Path "$env:GITHUB_WORKSPACE/ari-reports" -ItemType Directory -Force
+
+          Move-Item -Path "$HOME/AzureResourceInventory/*.xlsx" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
+          if (Test-Path "$HOME/AzureResourceInventory/*.xml") {
+              Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
+          }
+
+      - name: Upload Reports as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ARI-Reports-OIDC
+          path: ari-reports/
+          retention-days: 90
