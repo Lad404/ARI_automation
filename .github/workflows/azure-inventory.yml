@@ -69,14 +69,17 @@ jobs:
           # 2. Hard-silence the internal Update-Module function loop inside the script logic
           $scriptContent = Get-Content $functionPath -Raw
           $scriptContent = $scriptContent -replace 'Update-Module -Name AzureResourceInventory', '# Update-Module bypassed'
+          
+          # 3. CRITICAL HARD-BYPASS: Mock the Get-Package call at the end of the report to prevent tracking crashes
+          $scriptContent = $scriptContent -replace 'Get-Package -Name AzureResourceInventory', '[PSCustomObject]@{Version="3.1.2"}'
           Set-Content -Path $functionPath -Value $scriptContent -Force
 
-          # 3. CRITICAL COOPERATIVE FIX: Copy the patched folder to the default user module path so background jobs can find it
+          # 4. Copy the patched folder to the default user module path so background jobs can find it
           $TargetModuleDir = "$HOME/.local/share/powershell/Modules/AzureResourceInventory"
           New-Item -Path $TargetModuleDir -ItemType Directory -Force
           Copy-Item -Path "$HOME/AzureResourceInventory/*" -Destination $TargetModuleDir -Recurse -Force
 
-          # 4. Import the module from its newly copied native location
+          # 5. Import the module from its newly copied native location
           Import-Module "$TargetModuleDir/AzureResourceInventory.psd1" -Force
 
           $params = @{}
@@ -98,7 +101,7 @@ jobs:
           # Prep workspace for extraction
           New-Item -Path "$env:GITHUB_WORKSPACE/ari-reports" -ItemType Directory -Force
 
-          # Consolidate sheets
+          # Consolidate sheets (Looks inside the workspace folder where ARI drops reports)
           if (Test-Path "$HOME/AzureResourceInventory/*.xlsx") {
               Move-Item -Path "$HOME/AzureResourceInventory/*.xlsx" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
