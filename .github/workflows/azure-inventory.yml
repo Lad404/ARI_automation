@@ -71,8 +71,13 @@ jobs:
           $scriptContent = $scriptContent -replace 'Update-Module -Name AzureResourceInventory', '# Update-Module bypassed'
           Set-Content -Path $functionPath -Value $scriptContent -Force
 
-          # 3. Import the patched manifest file
-          Import-Module $manifestPath -Force
+          # 3. CRITICAL COOPERATIVE FIX: Copy the patched folder to the default user module path so background jobs can find it
+          $TargetModuleDir = "$HOME/.local/share/powershell/Modules/AzureResourceInventory"
+          New-Item -Path $TargetModuleDir -ItemType Directory -Force
+          Copy-Item -Path "$HOME/AzureResourceInventory/*" -Destination $TargetModuleDir -Recurse -Force
+
+          # 4. Import the module from its newly copied native location
+          Import-Module "$TargetModuleDir/AzureResourceInventory.psd1" -Force
 
           $params = @{}
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
@@ -100,12 +105,12 @@ jobs:
           if (Test-Path "$HOME/AzureResourceInventory/*.xml") {
               Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
-
+          
       - name: Upload to Azure Blob Storage
         shell: pwsh
         run: |
           $storageAccount = "${{ secrets.AZURE_STORAGE_ACCOUNT }}"
-          $container = "ari-reports"
+          $container = "reports"
           $ctx = New-AzStorageContext -StorageAccountName $storageAccount -UseConnectedAccount
 
           Get-ChildItem -Path "$env:GITHUB_WORKSPACE/ari-reports" -File | ForEach-Object {
