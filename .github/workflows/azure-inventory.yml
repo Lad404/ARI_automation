@@ -81,6 +81,9 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
+          # CRITICAL BYPASS: Stops the tool from trying to self-update via a broken module path stream
+          $params.Add("SkipUpdateCheck", $true)
+
           # Run the inventory engine
           Invoke-ARI @params
 
