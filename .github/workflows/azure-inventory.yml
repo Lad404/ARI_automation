@@ -3,16 +3,19 @@ name: Azure Resource Inventory (OIDC + Blob + Email)
 on:
   schedule:
     - cron: '0 8 * * 1'
+
   workflow_dispatch:
     inputs:
       subscriptionId:
         description: 'Specific subscription ID (optional)'
         required: false
         default: ''
+
       resourceGroup:
         description: 'Specific resource group (optional)'
         required: false
         default: ''
+
       reportName:
         description: 'Custom report name (optional)'
         required: false
@@ -25,11 +28,15 @@ permissions:
 jobs:
   run-inventory:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
 
-      - name: Login to Azure via OIDC
+    steps:
+
+      # Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Azure Login using OIDC
+      - name: Azure Login via OIDC
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -37,112 +44,178 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           enable-AzPSSession: true
 
-      - name: Install Linux Graphics Dependencies for ImportExcel
+      # Install Linux dependencies required for ImportExcel
+      - name: Install Linux Dependencies
         run: |
-          sudo apt-get -y update
-          sudo apt-get install -y --no-install-recommends libgdiplus libc6-dev
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgdiplus \
+            libc6-dev
 
-      - name: Download and Setup Stable ARI
+      # Install PowerShell Modules Properly
+      - name: Install Azure Resource Inventory Modules
         shell: pwsh
         run: |
-          # 1. Install ImportExcel engine
-          Install-Module -Name ImportExcel -Force -Scope CurrentUser
 
-          # 2. Pull stable 3.1.2 zip bundle directly from PSGallery storage mirror
-          $packageUrl = "https://www.powershellgallery.com/api/v2/package/AzureResourceInventory/3.1.2"
-          Invoke-WebRequest -Uri $packageUrl -OutFile "$HOME/ari_stable.zip"
-          
-          # 3. Extract straight into the User Modules path so background jobs natively inherit it
-          $TargetModuleDir = "$HOME/.local/share/powershell/Modules/AzureResourceInventory"
-          New-Item -Path $TargetModuleDir -ItemType Directory -Force
-          Expand-Archive -Path "$HOME/ari_stable.zip" -DestinationPath $TargetModuleDir -Force
+          Write-Host "Installing NuGet Provider..."
+          Install-PackageProvider -Name NuGet -Force
 
-      - name: Run ARI
+          Write-Host "Trusting PSGallery..."
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+
+          Write-Host "Installing Az Module..."
+          Install-Module `
+            -Name Az `
+            -Force `
+            -AllowClobber `
+            -Scope CurrentUser
+
+          Write-Host "Installing ImportExcel Module..."
+          Install-Module `
+            -Name ImportExcel `
+            -Force `
+            -AllowClobber `
+            -Scope CurrentUser
+
+          Write-Host "Installing AzureResourceInventory Module..."
+          Install-Module `
+            -Name AzureResourceInventory `
+            -Force `
+            -AllowClobber `
+            -Scope CurrentUser
+
+      # Execute Azure Resource Inventory
+      - name: Run Azure Resource Inventory
         shell: pwsh
         run: |
-          $TargetModuleDir = "$HOME/.local/share/powershell/Modules/AzureResourceInventory"
-          $manifestPath = "$TargetModuleDir/AzureResourceInventory.psd1"
 
-          # 1. Cleanly strip the missing Az.CostManagement module from the manifest array
-          $manifestContent = Get-Content $manifestPath -Raw
-          $manifestContent = $manifestContent -replace ",\s*'Az\.CostManagement'|\s*'Az\.CostManagement'\s*,", ""
-          Set-Content -Path $manifestPath -Value $manifestContent -Force
+          Write-Host "Importing AzureResourceInventory Module..."
+          Import-Module AzureResourceInventory -Force
 
-          # 2. MOCK THE OS PACKAGE MANAGER: Drop a local installation receipt directly into the PackageManagement folder core
-          # This guarantees that ANY thread calling 'Get-Package' will find a verified database match from the OS itself
-          $inventoryPath = "$HOME/.config/PowerShell/PackageManagement/LocalFile.txt"
-          New-Item -Path (Split-Path $inventoryPath -Parent) -ItemType Directory -Force
-          
-          # Force register a mock source so the built-in provider engine initializes safely
-          Register-PackageSource -Name "MockGallery" -Location "$HOME" -ProviderName "PowerShellGet" -ErrorAction SilentlyContinue
+          Write-Host "Creating Parameters..."
 
-          # 3. IN-MEMORY FUNCTION INJECTIONS (Safety net for the main thread)
-          Function Update-Module { param([string]$Name); Write-Output "Bypassed internal Update-Module loop." }
-          Function Get-Package { 
-              param([string]$Name)
-              if ($Name -eq 'AzureResourceInventory') {
-                  return [PSCustomObject]@{ Name = 'AzureResourceInventory'; Version = '3.1.2'; ProviderName = 'PowerShellGet' }
-              }
-              return Microsoft.PowerShell.PackageManagement\Get-Package @PSBoundParameters
+          $params = @{
+            ReportName = "AzureInventory_$(Get-Date -Format 'yyyyMMdd')"
           }
 
-          # 4. Import the module cleanly
-          Import-Module $manifestPath -Force
-
-          $params = @{}
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
-              $params.Add("SubscriptionID", "${{ github.event.inputs.subscriptionId }}")
-          }
-          if ("${{ github.event.inputs.resourceGroup }}" -ne "") {
-              $params.Add("ResourceGroup", "${{ github.event.inputs.resourceGroup }}")
-          }
-          if ("${{ github.event.inputs.reportName }}" -ne "") {
-              $params.Add("ReportName", "${{ github.event.inputs.reportName }}")
-          } else {
-              $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
+            $params["SubscriptionID"] = "${{ github.event.inputs.subscriptionId }}"
           }
 
-          # 5. Run the inventory script engine
+          if ("${{ github.event.inputs.resourceGroup }}" -ne "") {
+            $params["ResourceGroup"] = "${{ github.event.inputs.resourceGroup }}"
+          }
+
+          if ("${{ github.event.inputs.reportName }}" -ne "") {
+            $params["ReportName"] = "${{ github.event.inputs.reportName }}"
+          }
+
+          Write-Host "Running Azure Resource Inventory..."
           Invoke-ARI @params
 
-          # 6. Prep workspace for extraction
-          New-Item -Path "$env:GITHUB_WORKSPACE/ari-reports" -ItemType Directory -Force
+          Write-Host "Preparing report folder..."
 
-          # Find the Excel files wherever they got generated on the file system and aggregate them
-          Get-ChildItem -Path "$HOME" -Filter "*.xlsx" -Recurse -ErrorAction SilentlyContinue | Move-Item -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
-          Get-ChildItem -Path "$HOME" -Filter "*.xml" -Recurse -ErrorAction SilentlyContinue | Move-Item -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
+          New-Item `
+            -Path "$env:GITHUB_WORKSPACE/ari-reports" `
+            -ItemType Directory `
+            -Force
 
-      - name: Upload to Azure Blob Storage
+          Write-Host "Collecting generated reports..."
+
+          Get-ChildItem `
+            -Path $HOME `
+            -Filter "*.xlsx" `
+            -Recurse `
+            -ErrorAction SilentlyContinue |
+            Move-Item `
+            -Destination "$env:GITHUB_WORKSPACE/ari-reports/" `
+            -Force
+
+          Get-ChildItem `
+            -Path $HOME `
+            -Filter "*.xml" `
+            -Recurse `
+            -ErrorAction SilentlyContinue |
+            Move-Item `
+            -Destination "$env:GITHUB_WORKSPACE/ari-reports/" `
+            -Force
+
+          Write-Host "Generated Reports:"
+          Get-ChildItem "$env:GITHUB_WORKSPACE/ari-reports"
+
+      # Upload Reports as GitHub Artifact
+      - name: Upload Reports to GitHub Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: azure-resource-inventory-report
+          path: ari-reports/
+
+      # Upload Reports to Azure Blob Storage
+      - name: Upload Reports to Azure Blob Storage
         shell: pwsh
         run: |
+
           $storageAccount = "${{ secrets.AZURE_STORAGE_ACCOUNT }}"
           $container = "ari-reports"
-          $ctx = New-AzStorageContext -StorageAccountName $storageAccount -UseConnectedAccount
 
-          Get-ChildItem -Path "$env:GITHUB_WORKSPACE/ari-reports" -File | ForEach-Object {
-              Set-AzStorageBlobContent -File $_.FullName -Container $container -Blob $_.Name -Context $ctx -Force
+          Write-Host "Creating Storage Context..."
+
+          $ctx = New-AzStorageContext `
+            -StorageAccountName $storageAccount `
+            -UseConnectedAccount
+
+          Write-Host "Uploading Files to Blob Container..."
+
+          Get-ChildItem `
+            -Path "$env:GITHUB_WORKSPACE/ari-reports" `
+            -File |
+            ForEach-Object {
+
+              Write-Host "Uploading $($_.Name)"
+
+              Set-AzStorageBlobContent `
+                -File $_.FullName `
+                -Container $container `
+                -Blob $_.Name `
+                -Context $ctx `
+                -Force
           }
 
-      - name: Send Email Notification with Attachment
+      # Send Email Notification
+      - name: Send Email Notification
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
+
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
+
           subject: Azure Resource Inventory Report - Run ID ${{ github.run_id }}
+
           body: |
             Hello Team,
-            
-            The automated Azure Resource Inventory execution has completed successfully.
-            
-            - A long-term backup copy has been securely uploaded to the Azure Blob Container: "ari-reports".
-            - The raw file has been attached directly to this distribution notification.
-            
-            Best Regards,
-            Cloud Infrastructure Automation Bot
-          to: primary-recipient@example.com, second-recipient@example.com
-          cc: manager@example.com, supervisor@example.com
+
+            The Azure Resource Inventory execution has completed successfully.
+
+            Reports Generated:
+            - Excel Inventory Report
+            - XML Inventory Report
+
+            Storage Location:
+            Azure Blob Container: ari-reports
+
+            Regards,
+            Cloud Automation Team
+
+          to: primary-recipient@example.com
+          cc: manager@example.com
+
           from: Azure Inventory Automation <${{ secrets.EMAIL_USERNAME }}>
+
+          secure: true
+
           attachments: |
-            ari-reports/*
+            ari-reports/*.xlsx
+            ari-reports/*.xml
+
