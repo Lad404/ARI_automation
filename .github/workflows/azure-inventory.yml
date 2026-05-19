@@ -50,16 +50,20 @@ jobs:
           # 1. Install ImportExcel which doesn't have the repository routing bug
           Install-Module -Name ImportExcel -Force -Scope CurrentUser
 
-          # 2. Bypass PSGallery completely for ARI by cloning a verified, stable release branch directly from GitHub source
-          git clone --branch v3.1.2 https://github.com/microsoft/ARI.git "$HOME/ARI_Source"
+          # 2. Clone the main repository cleanly
+          git clone https://github.com/microsoft/ARI.git "$HOME/ARI_Source"
           
-          # 3. Import the module directly from the downloaded source files
+          # 3. Pivot inside the directory and force check out the working stable build commit
+          cd "$HOME/ARI_Source"
+          git checkout d4cf67f
+
+          # 4. Import the module directly from the verified root path
           Import-Module "$HOME/ARI_Source/AzureResourceInventory.psd1" -Force
 
       - name: Run ARI
         shell: pwsh
         run: |
-          # Re-import the locally cloned module inside this step's session
+          # Load the locally checked-out code into this runner step session
           Import-Module "$HOME/ARI_Source/AzureResourceInventory.psd1" -Force
 
           $params = @{}
@@ -75,7 +79,6 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # Execute using the direct source import context
           Invoke-ARI @params
 
           # Prep workspace for extraction
