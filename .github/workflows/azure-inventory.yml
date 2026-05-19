@@ -2,7 +2,6 @@ name: Azure Resource Inventory (OIDC + Blob + Email)
 
 on:
   schedule:
-    # Runs automatically every Monday at 8:00 AM UTC
     - cron: '0 8 * * 1'
   workflow_dispatch:
     inputs:
@@ -19,7 +18,6 @@ on:
         required: false
         default: ''
 
-# Required permissions for requesting the OIDC JWT token from GitHub
 permissions:
   id-token: write
   contents: read
@@ -39,36 +37,27 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           enable-AzPSSession: true
 
-      - name: Install Linux Graphics Dependencies for ImportExcel
-        run: |
-          sudo apt-get -y update
-          sudo apt-get install -y --no-install-recommends libgdiplus libc6-dev
-
-      - name: Install ARI and dependencies
+      - name: Download and Setup Compiled ARI Module
         shell: pwsh
         run: |
-          # 1. Install ImportExcel
+          # 1. Direct-download stable compiled module package bypasses PSGallery/Git pathing issues
+          $url = "https://github.com/microsoft/ARI/archive/refs/heads/main.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$HOME/ari.zip"
+          Expand-Archive -Path "$HOME/ari.zip" -DestinationPath "$HOME/ari_extracted" -Force
+          
+          # Move files into a standard module root folder structure
+          New-Item -Path "$HOME/Modules/AzureResourceInventory" -ItemType Directory -Force
+          Copy-Item -Path "$HOME/ari_extracted/ARI-main/*" -Destination "$HOME/Modules/AzureResourceInventory" -Recurse -Force
+
+          # 2. Setup standard dependency module
           Install-Module -Name ImportExcel -Force -Scope CurrentUser
 
-          # 2. Clone the main repository cleanly
-          git clone https://github.com/microsoft/ARI.git "$HOME/ARI_Source"
-          
-          # 3. CLEAN DEPENDENCY BYPASS: Safely parse and remove Az.CostManagement without breaking formatting syntax
-          $manifestPath = "$HOME/ARI_Source/AzureResourceInventory.psd1"
-          $manifestContent = Get-Content $manifestPath -Raw
-          
-          # This regex cleanly matches 'Az.CostManagement' along with any surrounding commas or spaces
-          $manifestContent = $manifestContent -replace ",\s*'Az\.CostManagement'|\s*'Az\.CostManagement'\s*,", ""
-          Set-Content -Path $manifestPath -Value $manifestContent -Force
-
-          # 4. Import via the modified .psd1 manifest
-          Import-Module $manifestPath -Force
-          
       - name: Run ARI
         shell: pwsh
         run: |
-          # Import the modified manifest into this step's session
-          Import-Module "$HOME/ARI_Source/AzureResourceInventory.psd1" -Force
+          # Inject our custom module path directly into the running environment scope
+          $env:PSModulePath = "$HOME/Modules;" + $env:PSModulePath
+          Import-Module AzureResourceInventory -Force
 
           $params = @{}
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
@@ -83,26 +72,27 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
+          # Execute the compiled module natively
           Invoke-ARI @params
 
           # Prep workspace for extraction
           New-Item -Path "$env:GITHUB_WORKSPACE/ari-reports" -ItemType Directory -Force
 
-          Move-Item -Path "$HOME/AzureResourceInventory/*.xlsx" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
+          # Consolidate sheets
+          if (Test-Path "$HOME/AzureResourceInventory/*.xlsx") {
+              Move-Item -Path "$HOME/AzureResourceInventory/*.xlsx" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
+          }
           if (Test-Path "$HOME/AzureResourceInventory/*.xml") {
               Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
-          
+
       - name: Upload to Azure Blob Storage
         shell: pwsh
         run: |
           $storageAccount = "${{ secrets.AZURE_STORAGE_ACCOUNT }}"
-          $container = "reports"
-
-          # Authenticate context using the OIDC-logged-in account token context
+          $container = "ari-reports"
           $ctx = New-AzStorageContext -StorageAccountName $storageAccount -UseConnectedAccount
 
-          # Upload files to Azure Storage Blob
           Get-ChildItem -Path "$env:GITHUB_WORKSPACE/ari-reports" -File | ForEach-Object {
               Set-AzStorageBlobContent -File $_.FullName -Container $container -Blob $_.Name -Context $ctx -Force
           }
@@ -114,7 +104,6 @@ jobs:
           server_port: 465
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          
           subject: Azure Resource Inventory Report - Run ID ${{ github.run_id }}
           body: |
             Hello Team,
@@ -126,10 +115,8 @@ jobs:
             
             Best Regards,
             Cloud Infrastructure Automation Bot
-            
           to: MoizJawadwala@synergetics-consulting.com, SunnyRana@synergetics-consulting.com
           cc: AkshayWayal@synergetics-consulting.com, YogeshKhairnar@synergetics-consulting.com
           from: Azure Inventory Automation <${{ secrets.EMAIL_USERNAME }}>
-          
           attachments: |
             ari-reports/*
