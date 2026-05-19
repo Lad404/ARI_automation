@@ -39,6 +39,11 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           enable-AzPSSession: true
 
+      - name: Install Linux Graphics Dependencies for ImportExcel
+        run: |
+          sudo apt-get -y update
+          sudo apt-get install -y --no-install-recommends libgdiplus libc6-dev
+
       - name: Install ARI and dependencies
         shell: pwsh
         run: |
@@ -64,10 +69,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # CRITICAL LINUX FIX: Instructs ARI and ImportExcel to skip Windows-centric styling rendering
-          $params.Add("NoSpreadsheetFormatting", $true)
-
-          # Invoke Azure Resource Inventory automation
+          # Invoke Azure Resource Inventory automation (Clean execution with system graphics libraries ready)
           Invoke-ARI @params
 
           # Prep workspace for extraction
@@ -82,7 +84,7 @@ jobs:
         shell: pwsh
         run: |
           $storageAccount = "${{ secrets.AZURE_STORAGE_ACCOUNT }}"
-          $container = "reports"
+          $container = "ari-reports"
 
           # Authenticate context using the OIDC-logged-in account token context
           $ctx = New-AzStorageContext -StorageAccountName $storageAccount -UseConnectedAccount
@@ -95,13 +97,11 @@ jobs:
       - name: Send Email Notification with Attachment
         uses: dawidd6/action-send-mail@v3
         with:
-          # SMTP Server Configuration (Update server details if you aren't using Gmail's relay)
           server_address: smtp.gmail.com
           server_port: 465
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           
-          # Email Headers & Content
           subject: Azure Resource Inventory Report - Run ID ${{ github.run_id }}
           body: |
             Hello Team,
@@ -114,11 +114,9 @@ jobs:
             Best Regards,
             Cloud Infrastructure Automation Bot
             
-          # Recipients Configuration (Comma-separated lists)
           to: MoizJawadwala@synergetics-consulting.com, SunnyRana@synergetics-consulting.com
           cc: AkshayWayal@synergetics-consulting.com, YogeshKhairnar@synergetics-consulting.com
           from: Azure Inventory Automation <${{ secrets.EMAIL_USERNAME }}>
           
-          # Attachment Path mapping
           attachments: |
             ari-reports/*
