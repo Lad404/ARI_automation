@@ -129,15 +129,29 @@ jobs:
             -ItemType Directory `
             -Force
           
+          Write-Host "Disabling Windows Excel COM customization..."
+          
+          function Build-ARIExcelComObject {
+              param($File)
+          
+              Write-Host "Skipping Excel COM customization on Linux runner..."
+          }
+
+        
+          Write-Host "Creating report output folder..."
+          
+          New-Item `
+            -Path "$env:GITHUB_WORKSPACE/ari-reports" `
+            -ItemType Directory `
+            -Force
+          
           Write-Host "Running Invoke-ARI..."
           
-          Invoke-ARI `
-            @params `
-            -SkipReportExcel `
-            -ReportDir "$env:GITHUB_WORKSPACE/ari-reports"
+          Invoke-ARI @params
           
           Write-Host "Generated files:"
           Get-ChildItem "$env:GITHUB_WORKSPACE/ari-reports"
+
 
       # Upload Report as GitHub Artifact
       - name: Upload GitHub Artifact
