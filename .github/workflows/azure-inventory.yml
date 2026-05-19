@@ -47,6 +47,10 @@ jobs:
       - name: Install ARI and dependencies
         shell: pwsh
         run: |
+          # Force re-registration of PowerShell Gallery to fix the repository resolution bug
+          Register-PSRepository -Default -ErrorAction SilentlyContinue
+          Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
+
           # Pin to stable version 3.1.2 to bypass the v3.6.12 ComObject formatting bug
           Install-Module -Name AzureResourceInventory -RequiredVersion 3.1.2 -Force -Scope CurrentUser
           Install-Module -Name Az.Accounts -Force -Scope CurrentUser
