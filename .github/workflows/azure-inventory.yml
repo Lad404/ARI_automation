@@ -48,23 +48,21 @@ jobs:
           # 1. Force TLS 1.2 routing for secure package stream connections
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-          # 2. Unregister the existing broken reference to avoid "already exists" conflicts
+          # 2. Reset the gallery link cleanly
           Unregister-PSRepository -Name "PSGallery" -ErrorAction SilentlyContinue
-
-          # 3. Use the mandatory default flag required by the OS to rebuild the gallery link
           Register-PSRepository -Default
           Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
 
-          # 4. Clean install stable production modules directly from the newly repaired repository feed
+          # 3. Install using the updated official module name mapping
           Install-Module -Name ImportExcel -Repository PSGallery -Force -Scope CurrentUser
           Install-Module -Name Az.Accounts -Repository PSGallery -Force -Scope CurrentUser
-          Install-Module -Name AzureResourceInventory -RequiredVersion 3.1.2 -Repository PSGallery -Force -Scope CurrentUser
+          Install-Module -Name Az.ResourceInventory -Repository PSGallery -Force -Scope CurrentUser
 
       - name: Run ARI
         shell: pwsh
         run: |
-          # Import the cleanly installed gallery module
-          Import-Module AzureResourceInventory -Force
+          # Import using the updated module name
+          Import-Module Az.ResourceInventory -Force
 
           $params = @{}
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
@@ -79,7 +77,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # Execute the verified gallery module engine natively
+          # Execute the core inventory engine
           Invoke-ARI @params
 
           # Prep workspace for extraction
