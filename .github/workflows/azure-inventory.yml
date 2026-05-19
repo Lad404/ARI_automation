@@ -45,14 +45,22 @@ jobs:
       - name: Download and Setup Stable ARI
         shell: pwsh
         run: |
-          # 1. Force-install a stable version of ImportExcel that supports ARI's cell alignment properties
+          # 1. Install ImportExcel engine
           Install-Module -Name ImportExcel -RequiredVersion 7.8.6 -Force -Scope CurrentUser
 
-          # 2. Pull stable 3.1.2 zip bundle directly from PSGallery storage mirror
+          # 2. PATCH IMPORTEXCEL ALIGNMENT BUG: Wrap the crashing line 661 inside a silent try/catch block
+          $ImportExcelPath = "$HOME/.local/share/powershell/Modules/ImportExcel/7.8.6/Public/Export-Excel.ps1"
+          $ExcelSrc = Get-Content $ImportExcelPath -Raw
+          $TargetLine = 'Set-ExcelRange -Worksheet $ws @s'
+          $BypassLine = 'try { Set-ExcelRange -Worksheet $ws @s } catch {}'
+          $ExcelSrc = $ExcelSrc.Replace($TargetLine, $BypassLine)
+          Set-Content -Path $ImportExcelPath -Value $ExcelSrc -Force
+
+          # 3. Pull stable 3.1.2 zip bundle directly from PSGallery storage mirror
           $packageUrl = "https://www.powershellgallery.com/api/v2/package/AzureResourceInventory/3.1.2"
           Invoke-WebRequest -Uri $packageUrl -OutFile "$HOME/ari_stable.zip"
           
-          # 3. Extract straight into the User Modules path so background jobs natively inherit it
+          # 4. Extract straight into the User Modules path so background jobs natively inherit it
           $TargetModuleDir = "$HOME/.local/share/powershell/Modules/AzureResourceInventory"
           New-Item -Path $TargetModuleDir -ItemType Directory -Force
           Expand-Archive -Path "$HOME/ari_stable.zip" -DestinationPath $TargetModuleDir -Force
@@ -69,7 +77,6 @@ jobs:
           Set-Content -Path $manifestPath -Value $manifestContent -Force
 
           # 2. BRUTE-FORCE THE BACKGROUND THREADS: Inject an absolute function override file into the module's public scripts folder
-          # This forces even background threads to load our fake Get-Package and Update-Module instead of using the OS defaults
           $OverrideCode = @"
           Function Update-Module { param([string]`$Name); Write-Output "Bypassed." }
           Function Get-Package { param([string]`$Name); return [PSCustomObject]@{ Name = 'AzureResourceInventory'; Version = '3.1.2' } }
@@ -98,7 +105,7 @@ jobs:
           # 5. Prep workspace for extraction
           New-Item -Path "$env:GITHUB_WORKSPACE/ari-reports" -ItemType Directory -Force
 
-          # CORRECTED EXTRACTION PATHS: Find the Excel files wherever they got generated on the file system
+          # Find the Excel files wherever they got generated on the file system and aggregate them
           Get-ChildItem -Path "$HOME" -Filter "*.xlsx" -Recurse -ErrorAction SilentlyContinue | Move-Item -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           Get-ChildItem -Path "$HOME" -Filter "*.xml" -Recurse -ErrorAction SilentlyContinue | Move-Item -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
 
