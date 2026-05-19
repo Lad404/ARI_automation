@@ -42,27 +42,19 @@ jobs:
           sudo apt-get -y update
           sudo apt-get install -y --no-install-recommends libgdiplus libc6-dev
 
-      - name: Force Repair PSGallery and Install Modules
+      - name: Install Modules via Modern Package Manager
         shell: pwsh
         run: |
-          # 1. Force TLS 1.2 routing for secure package stream connections
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-          # 2. Reset the gallery link cleanly
-          Unregister-PSRepository -Name "PSGallery" -ErrorAction SilentlyContinue
-          Register-PSRepository -Default
-          Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
-
-          # 3. Install using the updated official module name mapping
-          Install-Module -Name ImportExcel -Repository PSGallery -Force -Scope CurrentUser
-          Install-Module -Name Az.Accounts -Repository PSGallery -Force -Scope CurrentUser
-          Install-Module -Name Az.ResourceInventory -Repository PSGallery -Force -Scope CurrentUser
+          # Use Microsoft's modern, standalone package engine to bypass the broken legacy Install-Module layers
+          # Install ImportExcel and the exact stable AzureResourceInventory module version
+          Install-PSResource -Name ImportExcel -TrustRepository -Scope CurrentUser -Force
+          Install-PSResource -Name AzureResourceInventory -Version "3.1.2" -TrustRepository -Scope CurrentUser -Force
 
       - name: Run ARI
         shell: pwsh
         run: |
-          # Import using the updated module name
-          Import-Module Az.ResourceInventory -Force
+          # Import the cleanly installed stable gallery module 
+          Import-Module AzureResourceInventory -Force
 
           $params = @{}
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
@@ -77,7 +69,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # Execute the core inventory engine
+          # Execute the verified gallery module engine natively
           Invoke-ARI @params
 
           # Prep workspace for extraction
@@ -90,7 +82,7 @@ jobs:
           if (Test-Path "$HOME/AzureResourceInventory/*.xml") {
               Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
-
+          
       - name: Upload to Azure Blob Storage
         shell: pwsh
         run: |
