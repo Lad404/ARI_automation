@@ -69,8 +69,13 @@ jobs:
           $manifestContent = $manifestContent -replace ",\s*'Az\.CostManagement'|\s*'Az\.CostManagement'\s*,", ""
           Set-Content -Path $manifestPath -Value $manifestContent -Force
 
-          # 2. IN-MEMORY FUNCTION INJECTION: Force a custom Get-Package dummy into the session
-          # This forces ARI to receive a valid object instead of hitting the runner's empty package manager database
+          # 2. IN-MEMORY FUNCTION INJECTIONS: Force dummy overrides into the session
+          # This completely silences the uninstalled update check and the finish line package verification loop
+          Function Update-Module {
+              param([string]$Name)
+              Write-Output "Bypassing internal Update-Module loop for $Name..."
+          }
+
           Function Get-Package {
               param([string]$Name)
               if ($Name -eq 'AzureResourceInventory') {
@@ -95,7 +100,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # 4. Run the inventory script engine with our function interceptor active
+          # 4. Run the inventory script engine with our function interceptors active
           Invoke-ARI @params
 
           # Prep workspace for extraction
