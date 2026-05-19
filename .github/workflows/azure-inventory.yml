@@ -55,9 +55,9 @@ jobs:
       - name: Run ARI
         shell: pwsh
         run: |
-          # Inject our custom module path directly into the running environment scope
-          $env:PSModulePath = "$HOME/Modules;" + $env:PSModulePath
-          Import-Module AzureResourceInventory -Force
+          # Use the explicit, absolute folder path to completely bypass environment module paths
+          $ModulePath = "$HOME/ari_extracted/ARI-main/AzureResourceInventory.psd1"
+          Import-Module $ModulePath -Force
 
           $params = @{}
           if ("${{ github.event.inputs.subscriptionId }}" -ne "") {
@@ -72,7 +72,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # Execute the compiled module natively
+          # Execute the tool
           Invoke-ARI @params
 
           # Prep workspace for extraction
@@ -85,7 +85,7 @@ jobs:
           if (Test-Path "$HOME/AzureResourceInventory/*.xml") {
               Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
-
+          
       - name: Upload to Azure Blob Storage
         shell: pwsh
         run: |
