@@ -45,10 +45,9 @@ jobs:
       - name: Install Modules via Modern Package Manager
         shell: pwsh
         run: |
-          # Use Microsoft's modern, standalone package engine to bypass the broken legacy Install-Module layers
-          # Install ImportExcel and the exact stable AzureResourceInventory module version
-          Install-PSResource -Name ImportExcel -TrustRepository -Scope CurrentUser -Force
-          Install-PSResource -Name AzureResourceInventory -Version "3.1.2" -TrustRepository -Scope CurrentUser -Force
+          # Use Microsoft's modern standalone package engine without the invalid -Force flag
+          Install-PSResource -Name ImportExcel -TrustRepository -Scope CurrentUser -NoClobber
+          Install-PSResource -Name AzureResourceInventory -Version "3.1.2" -TrustRepository -Scope CurrentUser -NoClobber
 
       - name: Run ARI
         shell: pwsh
