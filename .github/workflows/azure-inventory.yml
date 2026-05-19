@@ -83,7 +83,7 @@ jobs:
         shell: pwsh
         run: |
           $storageAccount = "${{ secrets.AZURE_STORAGE_ACCOUNT }}"
-          $container = "ari-reports"
+          $container = "reports"
 
           # Authenticate context using the OIDC-logged-in account token context
           $ctx = New-AzStorageContext -StorageAccountName $storageAccount -UseConnectedAccount
@@ -116,8 +116,8 @@ jobs:
             Cloud Infrastructure Automation Bot
             
           # Recipients Configuration (Comma-separated lists)
-          to: primary-recipient@example.com, second-recipient@example.com
-          cc: manager@example.com, supervisor@example.com
+          to: MoizJawadwala@synergetics-consulting.com, SunnyRana@synergetics-consulting.com
+          cc: AkshayWayal@synergetics-consulting.com, YogeshKhairnar@synergetics-consulting.com
           from: Azure Inventory Automation <${{ secrets.EMAIL_USERNAME }}>
           
           # Attachment Path mapping
