@@ -64,9 +64,8 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # CRITICAL LINUX FIXES: Instructs ARI and ImportExcel to skip Windows-centric styling rendering
+          # CRITICAL LINUX FIX: Instructs ARI and ImportExcel to skip Windows-centric styling rendering
           $params.Add("NoSpreadsheetFormatting", $true)
-          $params.Add("SkipNetworkProperties", $true)
 
           # Invoke Azure Resource Inventory automation
           Invoke-ARI @params
