@@ -1,4 +1,4 @@
-name: Azure Resource Inventory (OIDC)
+name: Azure Resource Inventory (OIDC + Blob + Email)
 
 on:
   schedule:
@@ -64,6 +64,10 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
+          # CRITICAL LINUX FIXES: Instructs ARI and ImportExcel to skip Windows-centric styling rendering
+          $params.Add("NoSpreadsheetFormatting", $true)
+          $params.Add("SkipNetworkProperties", $true)
+
           # Invoke Azure Resource Inventory automation
           Invoke-ARI @params
 
@@ -75,9 +79,47 @@ jobs:
               Move-Item -Path "$HOME/AzureResourceInventory/*.xml" -Destination "$env:GITHUB_WORKSPACE/ari-reports/" -Force
           }
 
-      - name: Upload Reports as Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload to Azure Blob Storage
+        shell: pwsh
+        run: |
+          $storageAccount = "${{ secrets.AZURE_STORAGE_ACCOUNT }}"
+          $container = "ari-reports"
+
+          # Authenticate context using the OIDC-logged-in account token context
+          $ctx = New-AzStorageContext -StorageAccountName $storageAccount -UseConnectedAccount
+
+          # Upload files to Azure Storage Blob
+          Get-ChildItem -Path "$env:GITHUB_WORKSPACE/ari-reports" -File | ForEach-Object {
+              Set-AzStorageBlobContent -File $_.FullName -Container $container -Blob $_.Name -Context $ctx -Force
+          }
+
+      - name: Send Email Notification with Attachment
+        uses: dawidd6/action-send-mail@v3
         with:
-          name: ARI-Reports-OIDC
-          path: ari-reports/
-          retention-days: 90
+          # SMTP Server Configuration (Update server details if you aren't using Gmail's relay)
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          
+          # Email Headers & Content
+          subject: Azure Resource Inventory Report - Run ID ${{ github.run_id }}
+          body: |
+            Hello Team,
+            
+            The automated Azure Resource Inventory execution has completed successfully.
+            
+            - A long-term backup copy has been securely uploaded to the Azure Blob Container: "ari-reports".
+            - The raw file has been attached directly to this distribution notification.
+            
+            Best Regards,
+            Cloud Infrastructure Automation Bot
+            
+          # Recipients Configuration (Comma-separated lists)
+          to: primary-recipient@example.com, second-recipient@example.com
+          cc: manager@example.com, supervisor@example.com
+          from: Azure Inventory Automation <${{ secrets.EMAIL_USERNAME }}>
+          
+          # Attachment Path mapping
+          attachments: |
+            ari-reports/*
