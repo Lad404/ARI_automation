@@ -53,11 +53,15 @@ jobs:
           # 2. Clone the main repository cleanly
           git clone https://github.com/microsoft/ARI.git "$HOME/ARI_Source"
           
-          # 3. CRITICAL BYPASS: Strip the missing Az.CostManagement dependency out of the manifest file
+          # 3. CLEAN DEPENDENCY BYPASS: Safely parse and remove Az.CostManagement without breaking formatting syntax
           $manifestPath = "$HOME/ARI_Source/AzureResourceInventory.psd1"
-          (Get-Content $manifestPath) -replace "'Az.CostManagement'", "" | Set-Content $manifestPath
+          $manifestContent = Get-Content $manifestPath -Raw
+          
+          # This regex cleanly matches 'Az.CostManagement' along with any surrounding commas or spaces
+          $manifestContent = $manifestContent -replace ",\s*'Az\.CostManagement'|\s*'Az\.CostManagement'\s*,", ""
+          Set-Content -Path $manifestPath -Value $manifestContent -Force
 
-          # 4. Import via the modified .psd1 manifest with its structural folder paths intact
+          # 4. Import via the modified .psd1 manifest
           Import-Module $manifestPath -Force
           
       - name: Run ARI
