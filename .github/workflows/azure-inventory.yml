@@ -48,9 +48,9 @@ jobs:
           # 1. Force TLS 1.2 routing for secure package stream connections
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-          # 2. Hard-register the absolute, verified Microsoft NuGet endpoint to fix the "No Match Found" lookup bug
+          # 2. Hard-register the absolute, verified Microsoft NuGet endpoint cleanly without the invalid -Force flag
           $PSGalleryUrl = "https://www.powershellgallery.com/api/v2"
-          Register-PSRepository -Name "PSGallery" -SourceLocation $PSGalleryUrl -InstallationPolicy Trusted -Force -ErrorAction SilentlyContinue
+          Register-PSRepository -Name "PSGallery" -SourceLocation $PSGalleryUrl -InstallationPolicy Trusted -ErrorAction SilentlyContinue
           Set-PSRepository -Name "PSGallery" -InstallationPolicy Trusted
 
           # 3. Clean install stable production modules directly from the newly repaired repository feed
