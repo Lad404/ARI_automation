@@ -55,8 +55,14 @@ jobs:
       - name: Run ARI
         shell: pwsh
         run: |
-          # Use the explicit, absolute folder path to completely bypass environment module paths
           $ModulePath = "$HOME/ari_extracted/ARI-main/AzureResourceInventory.psd1"
+          
+          # Strip the broken Az.CostManagement dependency directly from the unzipped manifest file cleanly
+          $manifestContent = Get-Content $ModulePath -Raw
+          $manifestContent = $manifestContent -replace ",\s*'Az\.CostManagement'|\s*'Az\.CostManagement'\s*,", ""
+          Set-Content -Path $ModulePath -Value $manifestContent -Force
+
+          # Explicitly import the modified manifest file
           Import-Module $ModulePath -Force
 
           $params = @{}
@@ -72,7 +78,7 @@ jobs:
               $params.Add("ReportName", "AzureInventory_$(Get-Date -Format 'yyyyMMdd')")
           }
 
-          # Execute the tool
+          # Run the inventory engine
           Invoke-ARI @params
 
           # Prep workspace for extraction
