@@ -55,9 +55,11 @@ jobs:
       - name: Run ARI
         shell: pwsh
         run: |
-          $ModulePath = "$HOME/ari_extracted/ARI-main/AzureResourceInventory.psd1"
-          
-          # Strip the broken Az.CostManagement dependency directly from the unzipped manifest file cleanly
+          # Dynamically locate the manifest file to eliminate Linux case-sensitivity folder bugs
+          $ModulePath = (Get-ChildItem -Path "$HOME/ari_extracted" -Filter "AzureResourceInventory.psd1" -Recurse).FullName
+          Write-Output "Successfully found module manifest at: $ModulePath"
+
+          # Strip the broken Az.CostManagement dependency directly from the file
           $manifestContent = Get-Content $ModulePath -Raw
           $manifestContent = $manifestContent -replace ",\s*'Az\.CostManagement'|\s*'Az\.CostManagement'\s*,", ""
           Set-Content -Path $ModulePath -Value $manifestContent -Force
